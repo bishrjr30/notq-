@@ -1,15 +1,12 @@
-# Base44 App
+# منصة NOTQ
 
+منصة لتعليم وتحسين نطق اللغة العربية الفصحى للطلاب باستخدام واجهة جميلة وتحليل صوتي بالذكاء الاصطناعي و Supabase.
 
-This app was created automatically by Base44.
-It's a Vite+React app that communicates with the Base44 API.
-
-## Running the app
+## تشغيل المشروع محليًا
 
 ```bash
 npm install
 npm run dev
-```
 
 ## Building the app
 
@@ -17,4 +14,3 @@ npm run dev
 npm run build
 ```
 
-For more information and support, please contact Base44 support at app@base44.com.
