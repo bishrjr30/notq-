@@ -39,7 +39,7 @@ const reviewAndCorrectText = async (originalText) => {
   try {
     setIsReviewing(true);
   
-      const reviewPrompt = 
+      const reviewPrompt =`
         أنت خبير في اللغة العربية والنحو. راجع النص التالي وصححه إذا لزم الأمر:
         
         "${originalText}"
