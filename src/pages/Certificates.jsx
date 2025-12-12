@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { supabase } from "@/api/supabaseClient";
+import { Certificate, Student } from "@/api/entities"; // ✅ العمل مع Supabase عبر entities
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Award, Lock } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -24,33 +24,19 @@ export default function CertificatesPage() {
         return;
       }
 
-      const { data: studentData, error: studentError } = await supabase
-        .from("students")
-        .select("*")
-        .eq("id", studentId)
-        .single();
-
-      if (studentError || !studentData) {
-        console.error("Error loading student:", studentError);
-        window.location.href = createPageUrl("StudentOnboarding");
-        return;
-      }
+      const [studentData, allCerts] = await Promise.all([
+        Student.get(studentId),
+        Certificate.list()
+      ]);
 
       setStudent(studentData);
 
-      const { data: myCerts, error: certsError } = await supabase
-        .from("certificates")
-        .select("*")
-        .eq("student_id", studentId);
+      // شهادات هذا الطالب فقط
+      const myCerts = allCerts.filter((c) => c.student_id === studentId);
+      setCertificates(myCerts);
 
-      if (certsError) {
-        console.error("Error loading certificates:", certsError);
-        setCertificates([]);
-      } else {
-        setCertificates(myCerts || []);
-      }
-
-      await checkAndAwardCertificates(studentData, myCerts || []);
+      // فحص وإنشاء شهادات جديدة إن استحق
+      await checkAndAwardCertificates(studentData, myCerts);
     } catch (e) {
       console.error(e);
     } finally {
@@ -59,11 +45,13 @@ export default function CertificatesPage() {
   };
 
   const checkAndAwardCertificates = async (student, existingCerts) => {
+    if (!student) return;
+
     const newCerts = [];
 
-    // Rule 1: First Exercise
+    // ١) أول تمرين
     if (
-      student.total_exercises >= 1 &&
+      (student.total_exercises || 0) >= 1 &&
       !existingCerts.find((c) => c.title === "بداية البطل")
     ) {
       newCerts.push({
@@ -71,13 +59,13 @@ export default function CertificatesPage() {
         title: "بداية البطل",
         description: "أكملت تمرينك الأول بنجاح! بداية موفقة.",
         type: "special",
-        date_earned: new Date().toISOString(),
+        date_earned: new Date().toISOString()
       });
     }
 
-    // Rule 2: 10 Exercises
+    // ٢) 10 تمارين
     if (
-      student.total_exercises >= 10 &&
+      (student.total_exercises || 0) >= 10 &&
       !existingCerts.find((c) => c.title === "قارئ مثابر")
     ) {
       newCerts.push({
@@ -85,14 +73,14 @@ export default function CertificatesPage() {
         title: "قارئ مثابر",
         description: "أكملت 10 تمارين! استمر في التقدم.",
         type: "streak",
-        date_earned: new Date().toISOString(),
+        date_earned: new Date().toISOString()
       });
     }
 
-    // Rule 3: High Score
+    // ٣) متوسّط درجة عالي
     if (
-      student.average_score >= 90 &&
-      student.total_exercises >= 5 &&
+      (student.average_score || 0) >= 90 &&
+      (student.total_exercises || 0) >= 5 &&
       !existingCerts.find((c) => c.title === "نطق ذهبي")
     ) {
       newCerts.push({
@@ -101,46 +89,42 @@ export default function CertificatesPage() {
         description:
           "حققت متوسط درجات ممتاز (فوق 90%) في 5 تمارين على الأقل.",
         type: "score",
-        date_earned: new Date().toISOString(),
+        date_earned: new Date().toISOString()
       });
     }
 
     if (newCerts.length > 0) {
-      const { error: insertError } = await supabase
-        .from("certificates")
-        .insert(newCerts);
-
-      if (insertError) {
-        console.error("Error inserting certificates:", insertError);
-        return;
+      // إنشاء الشهادات الجديدة في Supabase
+      for (const cert of newCerts) {
+        await Certificate.create(cert);
       }
 
-      const { data: updatedCerts, error: reloadError } = await supabase
-        .from("certificates")
-        .select("*")
-        .eq("student_id", student.id);
-
-      if (reloadError) {
-        console.error("Error reloading certificates:", reloadError);
-      } else {
-        setCertificates(updatedCerts || []);
-      }
+      // إعادة التحميل بعد الإضافة
+      const updatedCerts = await Certificate.list();
+      setCertificates(
+        updatedCerts.filter((c) => c.student_id === student.id)
+      );
     }
   };
 
-  if (loading)
+  if (loading) {
     return (
       <div className="flex justify-center items-center h-screen">
         جارٍ التحميل...
       </div>
     );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center gap-4 mb-8">
           <Link to={createPageUrl("StudentDashboard")}>
-            <Button variant="outline" size="icon" className="rounded-full shadow-lg">
+            <Button
+              variant="outline"
+              size="icon"
+              className="rounded-full shadow-lg"
+            >
               <ArrowLeft className="w-4 h-4" />
             </Button>
           </Link>
@@ -171,7 +155,7 @@ export default function CertificatesPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {certificates.map((cert, index) => (
               <motion.div
-                key={cert.id}
+                key={cert.id || index}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1 }}
@@ -185,4 +169,3 @@ export default function CertificatesPage() {
     </div>
   );
 }
-```0
