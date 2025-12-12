@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { base44 } from '@/api/base44Client';
 import { Exercise } from '@/api/entities';
+import { InvokeLLM } from '@/api/aiclient'; // ✅ استبدال base44 بـ aiclient
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -32,30 +32,31 @@ export default function CreateCustomExercisePage() {
   const [isReviewing, setIsReviewing] = useState(false);
   const [error, setError] = useState(null);
 
-  // وظيفة لمراجعة وتصحيح النص المُنشأ - تشكيل آخر الكلمات فقط
+  // مراجعة وتصحيح النص باستخدام ذكاء اصطناعي من aiclient
   const reviewAndCorrectText = async (originalText) => {
-      try {
-        setIsReviewing(true);
-        const reviewPrompt = `
-  أنت خبير لغوي في اللغة العربية الفصحى. قم بمراجعة وتشكيل النص التالي تشكيلاً كاملاً وتاماً (100% Fully Vowelized).
+    try {
+      setIsReviewing(true);
+      const reviewPrompt = `
+أنت خبير لغوي في اللغة العربية الفصحى. قم بمراجعة وتشكيل النص التالي تشكيلاً كاملاً وتاماً (100% Fully Vowelized).
 
-  النص: "${originalText}"
+النص: "${originalText}"
 
-  **الشروط الصارمة جداً:**
-  1. **التشكيل الكامل لكل حرف:** يجب وضع الحركات (فتحة، ضمة، كسرة، سكون) على **جميع** الحروف بلا استثناء، وليس فقط أواخر الكلمات.
-  2. **الدقة النحوية والصرفية:** تأكد من صحة الإعراب وبنية الكلمات.
-  3. **الشدة:** ضع الشدة مع حركتها المناسبة في موضعها الصحيح.
-  4. **تنوين:** تأكد من صحة التنوين.
+**الشروط الصارمة جداً:**
+1. **التشكيل الكامل لكل حرف:** يجب وضع الحركات (فتحة، ضمة، كسرة، سكون) على **جميع** الحروف بلا استثناء، وليس فقط أواخر الكلمات.
+2. **الدقة النحوية والصرفية:** تأكد من صحة الإعراب وبنية الكلمات.
+3. **الشدة:** ضع الشدة مع حركتها المناسبة في موضعها الصحيح.
+4. **تنوين:** تأكد من صحة التنوين.
 
-  **مثال مطلوب:**
-  بدلاً من: "العلمُ نورٌ يُضيءُ الطريقَ"
-  يجب أن يكون: "الْعِلْمُ نُورٌ يُضِيءُ الطَّرِيقَ لِلْمُتَعَلِّمِينَ."
+**مثال مطلوب:**
+بدلاً من: "العلمُ نورٌ يُضيءُ الطريقَ"
+يجب أن يكون: "الْعِلْمُ نُورٌ يُضِيءُ الطَّرِيقَ لِلْمُتَعَلِّمِينَ."
 
-  المطلوب: أعد كتابة النص مشكولاً بالكامل (Full Tashkeel) فقط، بدون أي مقدمات أو شرح.
-        `;
+المطلوب: أعد كتابة النص مشكولاً بالكامل (Full Tashkeel) فقط، بدون أي مقدمات أو شرح.
+      `;
 
-        const correctedText = await base44.integrations.Core.InvokeLLM({ prompt: reviewPrompt });
-      
+      // ✅ استدعاء الذكاء الاصطناعي من aiclient
+      const correctedText = await InvokeLLM({ prompt: reviewPrompt });
+
       if (typeof correctedText === 'string' && correctedText.trim()) {
         return correctedText.trim();
       } else {
@@ -63,7 +64,6 @@ export default function CreateCustomExercisePage() {
       }
     } catch (error) {
       console.error('Text review failed:', error);
-      // Fallback to original text on error (including limits)
       return originalText;
     } finally {
       setIsReviewing(false);
@@ -75,70 +75,68 @@ export default function CreateCustomExercisePage() {
       setError('يرجى اختيار نوع النص.');
       return;
     }
-    
+
     if (textType === 'نص خاص' && !customText.trim()) {
       setError('يرجى كتابة النص الخاص بك.');
       return;
     }
-    
+
     setError(null);
     setIsLoading(true);
 
     try {
       let finalText = '';
-      
+
       if (textType === 'نص خاص') {
         finalText = await reviewAndCorrectText(customText.trim());
       } else {
-        const selectedType = TEXT_TYPES.find(t => t.value === textType);
-        
-        // Calculate complexity
         let complexityInstruction = "استخدم جملاً بسيطة ومفردات سهلة (مستوى مبتدئ).";
         if (wordCount[0] > 150) complexityInstruction = "استخدم جملاً مركبة، وتراكيب بلاغية قوية، ومفردات غنية (مستوى متقدم).";
         else if (wordCount[0] > 80) complexityInstruction = "استخدم جملاً متوسطة الطول، واربط بينها بأدوات ربط مناسبة (مستوى متوسط).";
 
         const prompt = `
-        بصفتك خبيراً لغوياً، أنشئ نصاً ${textType}اً باللغة العربية الفُصحى.
-        
-        الطول التقريبي: ${wordCount[0]} كلمة.
-        مستوى الصعوبة: ${complexityInstruction}
+بصفتك خبيراً لغوياً، أنشئ نصاً ${textType}اً باللغة العربية الفُصحى.
 
-        **المعيار الذهبي للتشكيل (The Golden Standard):**
-        1. **تشكيل كامل 100%:** كل حرف يجب أن يحمل حركة (أو سكون). لا تترك أي حرف عارياً.
-        2. **دقة الإعراب:** انتبه لعلامات الإعراب في أواخر الكلمات (الرفع، النصب، الجر، الجزم) حسب القواعد النحوية الصحيحة.
-        3. **التركيب السليم:** الجمل يجب أن تكون سليمة التركيب والمعنى.
-        
-        **مثال:**
-        بدلاً من "السماء صافية والشمس مشرقة" (بدون تشكيل كامل)،
-        اكتب: "السَّمَاءُ صَافِيَةٌ، وَالشَّمْسُ مُشْرِقَةٌ تُرْسِلُ أَشِعَّتَهَا الذَّهَبِيَّةَ عَلَى الْأَرْضِ."
+الطول التقريبي: ${wordCount[0]} كلمة.
+مستوى الصعوبة: ${complexityInstruction}
 
-        المطلوب: النص فقط، مشكولاً بالكامل وبدقة متناهية، بدون أي زيادات.
+**المعيار الذهبي للتشكيل (The Golden Standard):**
+1. **تشكيل كامل 100%:** كل حرف يجب أن يحمل حركة (أو سكون). لا تترك أي حرف عارياً.
+2. **دقة الإعراب:** انتبه لعلامات الإعراب في أواخر الكلمات (الرفع، النصب، الجر، الجزم) حسب القواعد النحوية الصحيحة.
+3. **التركيب السليم:** الجمل يجب أن تكون سليمة التركيب والمعنى.
+
+**مثال:**
+بدلاً من "السماء صافية والشمس مشرقة" (بدون تشكيل كامل)،
+اكتب: "السَّمَاءُ صَافِيَةٌ، وَالشَّمْسُ مُشْرِقَةٌ تُرْسِلُ أَشِعَّتَهَا الذَّهَبِيَّةَ عَلَى الْأَرْضِ."
+
+المطلوب: النص فقط، مشكولاً بالكامل وبدقة متناهية، بدون أي زيادات.
         `;
 
         try {
-          const generatedText = await base44.integrations.Core.InvokeLLM({ prompt });
+          // ✅ استدعاء الذكاء الاصطناعي من aiclient بدلاً من base44
+          const generatedText = await InvokeLLM({ prompt });
 
           if (typeof generatedText !== 'string' || generatedText.trim() === '') {
             throw new Error('فشل الذكاء الاصطناعي في إنشاء النص.');
           }
-          
+
           finalText = await reviewAndCorrectText(generatedText.trim());
         } catch (llmError) {
           if (llmError.message && llmError.message.includes('limit')) {
-             throw new Error('عذراً، وصلنا للحد الأقصى من استخدام الذكاء الاصطناعي. يرجى اختيار "نص خاص" وكتابة النص بنفسك.');
+            throw new Error('عذراً، وصلنا للحد الأقصى من استخدام الذكاء الاصطناعي. يرجى اختيار "نص خاص" وكتابة النص بنفسك.');
           }
           throw llmError;
         }
       }
-      
+
       if (!finalText || finalText.length < 20) {
         throw new Error('النص المُنشأ قصير جداً أو غير صالح.');
       }
-      
+
       let level = 'مبتدئ';
       let stage = 1;
       const actualWordCount = finalText.split(/\s+/).length;
-      
+
       if (actualWordCount >= 150) {
         level = 'متقدم';
         stage = Math.min(10, Math.floor(actualWordCount / 50));
@@ -148,7 +146,7 @@ export default function CreateCustomExercisePage() {
       } else {
         stage = Math.min(5, Math.floor(actualWordCount / 20));
       }
-      
+
       const newExercise = await Exercise.create({
         sentence: finalText,
         level: level,
@@ -161,7 +159,6 @@ export default function CreateCustomExercisePage() {
       const urlParams = new URLSearchParams(window.location.search);
       const studentId = urlParams.get('studentId');
       navigate(createPageUrl(`Exercise?id=${newExercise.id}&studentId=${studentId}`));
-
     } catch (err) {
       console.error(err);
       setError('حدث خطأ أثناء إنشاء التمرين. يرجى المحاولة مرة أخرى.');
@@ -196,10 +193,10 @@ export default function CreateCustomExercisePage() {
             </p>
           </div>
         </motion.div>
-        
+
         <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
         >
           <Card className="border-0 shadow-2xl bg-white/95 backdrop-blur-sm">
             <CardHeader className="bg-gradient-to-r from-orange-600 to-pink-600 text-white rounded-t-xl">
@@ -228,10 +225,10 @@ export default function CreateCustomExercisePage() {
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                     >
-                      <Card 
+                      <Card
                         className={`cursor-pointer transition-all duration-300 ${
-                          textType === type.value 
-                            ? 'border-4 border-orange-500 bg-orange-50 shadow-xl ring-4 ring-orange-200' 
+                          textType === type.value
+                            ? 'border-4 border-orange-500 bg-orange-50 shadow-xl ring-4 ring-orange-200'
                             : 'border-2 border-gray-200 hover:border-orange-300 hover:shadow-lg'
                         }`}
                         onClick={() => setTextType(type.value)}
@@ -256,7 +253,7 @@ export default function CreateCustomExercisePage() {
                     <FileText className="w-5 h-5" />
                     ✍️ اكتب أو الصق النص الخاص بك
                   </Label>
-                  <Textarea 
+                  <Textarea
                     id="custom-text"
                     placeholder="اكتب أو الصق هنا النص الذي تريد التدرب عليه..."
                     value={customText}
@@ -272,10 +269,10 @@ export default function CreateCustomExercisePage() {
               {textType && textType !== 'نص خاص' && (
                 <div className="space-y-4">
                   <Label className="arabic-text text-lg font-bold text-gray-800">
-                    📏 عدد الكلمات (حوالي {Math.round(wordCount[0]/150)} دقيقة قراءة)
+                    📏 عدد الكلمات (حوالي {Math.round(wordCount[0] / 150)} دقيقة قراءة)
                   </Label>
                   <div className="flex items-center gap-6">
-                    <Slider 
+                    <Slider
                       value={wordCount}
                       onValueChange={setWordCount}
                       min={30}
@@ -289,7 +286,8 @@ export default function CreateCustomExercisePage() {
                   </div>
                   <div className="bg-purple-50 rounded-xl p-4 border-2 border-purple-200">
                     <p className="text-sm text-purple-800 arabic-text font-semibold">
-                      <strong>📊 المستوى المتوقع:</strong> {wordCount[0] >= 150 ? 'متقدم 🏆' : wordCount[0] >= 100 ? 'متوسط ⭐' : 'مبتدئ 🎯'}
+                      <strong>📊 المستوى المتوقع:</strong>{' '}
+                      {wordCount[0] >= 150 ? 'متقدم 🏆' : wordCount[0] >= 100 ? 'متوسط ⭐' : 'مبتدئ 🎯'}
                     </p>
                   </div>
                 </div>
