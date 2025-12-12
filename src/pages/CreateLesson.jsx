@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { supabase } from "@/api/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,32 @@ const GRADES = [
   "الصف الخامس", "الصف السادس", "الصف السابع", "الصف الثامن",
   "الصف التاسع", "الصف العاشر", "الصف الحادي عشر", "الصف الثاني عشر"
 ];
+
+// رفع ملف إلى سوبابيز (باكت recordings)
+const uploadToSupabase = async (file, folder) => {
+  const ext = file.name.split(".").pop();
+  const fileName = `${folder}-${Date.now()}.${ext}`;
+  const filePath = `${folder}/${fileName}`;
+
+  const { error: uploadError } = await supabase
+    .storage
+    .from("recordings")
+    .upload(filePath, file, {
+      cacheControl: "3600",
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw uploadError;
+  }
+
+  const { data: publicData } = supabase
+    .storage
+    .from("recordings")
+    .getPublicUrl(filePath);
+
+  return publicData?.publicUrl;
+};
 
 export default function CreateLessonPage() {
   const navigate = useNavigate();
@@ -49,23 +75,23 @@ export default function CreateLessonPage() {
   const startRecording = async () => {
     try {
       setError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           sampleRate: 44100
-        } 
+        }
       });
 
       streamRef.current = stream;
 
       const options = {
-        mimeType: 'audio/webm;codecs=opus',
+        mimeType: "audio/webm;codecs=opus",
         audioBitsPerSecond: 128000
       };
 
       if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-        options.mimeType = 'audio/webm';
+        options.mimeType = "audio/webm";
       }
 
       mediaRecorderRef.current = new MediaRecorder(stream, options);
@@ -78,12 +104,12 @@ export default function CreateLessonPage() {
       };
 
       mediaRecorderRef.current.onstop = () => {
-        const mimeType = mediaRecorderRef.current.mimeType || 'audio/webm';
+        const mimeType = mediaRecorderRef.current.mimeType || "audio/webm";
         const blob = new Blob(audioChunksRef.current, { type: mimeType });
-        setAudioBlobs(prev => [...prev, blob]);
-        
+        setAudioBlobs((prev) => [...prev, blob]);
+
         if (streamRef.current) {
-          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current.getTracks().forEach((track) => track.stop());
         }
       };
 
@@ -92,22 +118,21 @@ export default function CreateLessonPage() {
       setCurrentRecordingTime(0);
 
       timerRef.current = setInterval(() => {
-        setCurrentRecordingTime(prev => {
+        setCurrentRecordingTime((prev) => {
           const newTime = prev + 1;
-          
+
           if (newTime >= 900) {
             stopRecording();
             setTimeout(() => startRecording(), 1000);
             return 0;
           }
-          
+
           return newTime;
         });
       }, 1000);
-
-    } catch (error) {
-      console.error('Error accessing microphone:', error);
-      setError('لم يتمكن من الوصول للميكروفون. يرجى التأكد من منح الإذن.');
+    } catch (err) {
+      console.error("Error accessing microphone:", err);
+      setError("لم يتمكن من الوصول للميكروفون. يرجى التأكد من منح الإذن.");
     }
   };
 
@@ -115,7 +140,7 @@ export default function CreateLessonPage() {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-      
+
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -126,53 +151,48 @@ export default function CreateLessonPage() {
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   const handleFileUpload = async (type) => {
-    const inputRef = type === 'video' ? videoInputRef : imageInputRef;
+    const inputRef = type === "video" ? videoInputRef : imageInputRef;
     const file = inputRef.current?.files[0];
-    
+
     if (!file) return;
 
     try {
       setIsUploading(true);
       setUploadProgress(30);
-      
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
-      
-      setUploadedFiles(prev => ({ ...prev, [type]: file_url }));
+
+      const url = await uploadToSupabase(file, type === "video" ? "lesson-video" : "lesson-image");
+
+      setUploadedFiles((prev) => ({ ...prev, [type]: url }));
       setUploadProgress(100);
-      
+
       setTimeout(() => {
         setIsUploading(false);
         setUploadProgress(0);
       }, 500);
-      
-    } catch (error) {
-      console.error(`Failed to upload ${type}:`, error);
-      if (error.message && error.message.includes('limit')) {
-        setError(`عذراً، لقد وصلت للحد الأقصى من الملفات المسموح بها هذا الشهر.`);
-      } else {
-        setError(`فشل في رفع ${type === 'video' ? 'الفيديو' : 'الصورة'}`);
-      }
+    } catch (err) {
+      console.error(`Failed to upload ${type}:`, err);
+      setError(`فشل في رفع ${type === "video" ? "الفيديو" : "الصورة"}: ${err.message || ""}`);
       setIsUploading(false);
     }
   };
 
   const handleSubmit = async () => {
     if (!lessonData.title || !lessonData.grade) {
-      setError('يرجى إكمال جميع الحقول المطلوبة.');
+      setError("يرجى إكمال جميع الحقول المطلوبة.");
       return;
     }
 
-    if (mediaType === 'audio' && audioBlobs.length === 0) {
-      setError('يرجى تسجيل الشرح الصوتي.');
+    if (mediaType === "audio" && audioBlobs.length === 0) {
+      setError("يرجى تسجيل الشرح الصوتي.");
       return;
     }
 
-    if (mediaType === 'link' && !lessonData.external_link) {
-      setError('يرجى إدخال رابط الدرس.');
+    if (mediaType === "link" && !lessonData.external_link) {
+      setError("يرجى إدخال رابط الدرس.");
       return;
     }
 
@@ -182,27 +202,18 @@ export default function CreateLessonPage() {
 
     try {
       let audio_url = null;
-      
+
       if (audioBlobs.length > 0) {
-        const combinedBlob = new Blob(audioBlobs, { type: 'audio/webm' });
-        
+        const combinedBlob = new Blob(audioBlobs, { type: "audio/webm" });
+
         setUploadProgress(20);
 
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const fileName = `lesson_${lessonData.grade}_${timestamp}.webm`;
-        const file = new File([combinedBlob], fileName, { type: 'audio/webm' });
+        const fileName = `lesson_${lessonData.grade}_${Date.now()}.webm`;
+        const file = new File([combinedBlob], fileName, { type: "audio/webm" });
 
         setUploadProgress(40);
 
-        try {
-          const result = await base44.integrations.Core.UploadFile({ file });
-          audio_url = result.file_url;
-        } catch (uploadError) {
-          if (uploadError.message && uploadError.message.includes('limit')) {
-            throw new Error('عذراً، لقد وصلت للحد الأقصى من الملفات المسموح بها هذا الشهر. يرجى استخدام رابط خارجي أو المحاولة لاحقاً.');
-          }
-          throw uploadError;
-        }
+        audio_url = await uploadToSupabase(file, "lesson-audio");
       }
 
       setUploadProgress(70);
@@ -215,15 +226,20 @@ export default function CreateLessonPage() {
         subject: lessonData.subject || "عام",
         content_text: lessonData.content_text || "",
         teacher_name: lessonData.teacher_name || "المعلم",
-        audio_duration: totalDuration
+        audio_duration: totalDuration,
+        audio_url: audio_url || null,
+        video_url: uploadedFiles.video || null,
+        image_url: uploadedFiles.image || null,
+        external_link: lessonData.external_link || null,
       };
 
-      if (audio_url) lessonPayload.audio_url = audio_url;
-      if (uploadedFiles.video) lessonPayload.video_url = uploadedFiles.video;
-      if (uploadedFiles.image) lessonPayload.image_url = uploadedFiles.image;
-      if (lessonData.external_link) lessonPayload.external_link = lessonData.external_link;
+      const { error: insertError } = await supabase
+        .from("lessons")
+        .insert(lessonPayload);
 
-      await base44.entities.Lesson.create(lessonPayload);
+      if (insertError) {
+        throw insertError;
+      }
 
       setUploadProgress(100);
       setSuccess(true);
@@ -231,10 +247,9 @@ export default function CreateLessonPage() {
       setTimeout(() => {
         navigate("/TeacherDashboard");
       }, 2000);
-
-    } catch (error) {
-      console.error('Failed to create lesson:', error);
-      setError(`فشل في إنشاء الدرس: ${error.message || 'خطأ غير معروف'}`);
+    } catch (err) {
+      console.error("Failed to create lesson:", err);
+      setError(`فشل في إنشاء الدرس: ${err.message || "خطأ غير معروف"}`);
       setIsUploading(false);
     }
   };
@@ -327,7 +342,7 @@ export default function CreateLessonPage() {
                   <Input
                     id="teacher_name"
                     value={lessonData.teacher_name}
-                    onChange={(e) => setLessonData({...lessonData, teacher_name: e.target.value})}
+                    onChange={(e) => setLessonData({ ...lessonData, teacher_name: e.target.value })}
                     placeholder="أدخل اسمك..."
                     className="text-right arabic-text mt-2"
                   />
@@ -337,12 +352,12 @@ export default function CreateLessonPage() {
                   <Label htmlFor="grade" className="arabic-text text-lg font-semibold">
                     اختر الصف الدراسي *
                   </Label>
-                  <Select onValueChange={(value) => setLessonData({...lessonData, grade: value})}>
+                  <Select onValueChange={(value) => setLessonData({ ...lessonData, grade: value })}>
                     <SelectTrigger id="grade" className="text-right arabic-text mt-2">
                       <SelectValue placeholder="اختر الصف..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {GRADES.map(grade => (
+                      {GRADES.map((grade) => (
                         <SelectItem key={grade} value={grade} className="arabic-text">
                           {grade}
                         </SelectItem>
@@ -358,7 +373,7 @@ export default function CreateLessonPage() {
                   <Input
                     id="title"
                     value={lessonData.title}
-                    onChange={(e) => setLessonData({...lessonData, title: e.target.value})}
+                    onChange={(e) => setLessonData({ ...lessonData, title: e.target.value })}
                     placeholder="مثال: قواعد النحو - الفاعل والمفعول به"
                     className="text-right arabic-text mt-2"
                   />
@@ -371,7 +386,7 @@ export default function CreateLessonPage() {
                   <Input
                     id="subject"
                     value={lessonData.subject}
-                    onChange={(e) => setLessonData({...lessonData, subject: e.target.value})}
+                    onChange={(e) => setLessonData({ ...lessonData, subject: e.target.value })}
                     placeholder="مثال: اللغة العربية، الرياضيات، العلوم..."
                     className="text-right arabic-text mt-2"
                   />
@@ -384,7 +399,7 @@ export default function CreateLessonPage() {
                   <Textarea
                     id="content_text"
                     value={lessonData.content_text}
-                    onChange={(e) => setLessonData({...lessonData, content_text: e.target.value})}
+                    onChange={(e) => setLessonData({ ...lessonData, content_text: e.target.value })}
                     placeholder="يمكنك كتابة نص الدرس هنا ليظهر للطلاب..."
                     className="text-right arabic-text mt-2 min-h-[150px]"
                   />
@@ -467,7 +482,7 @@ export default function CreateLessonPage() {
                         ref={videoInputRef}
                         accept="video/*"
                         className="hidden"
-                        onChange={() => handleFileUpload('video')}
+                        onChange={() => handleFileUpload("video")}
                       />
                       <Button
                         onClick={() => videoInputRef.current?.click()}
@@ -477,7 +492,7 @@ export default function CreateLessonPage() {
                         <Upload className="w-5 h-5 ml-2" />
                         اختر فيديو
                       </Button>
-                      
+
                       {uploadedFiles.video && (
                         <div className="mt-4 bg-green-50 rounded-xl p-4 border-2 border-green-200">
                           <p className="text-green-800 arabic-text">✅ تم رفع الفيديو بنجاح</p>
@@ -493,7 +508,7 @@ export default function CreateLessonPage() {
                         ref={imageInputRef}
                         accept="image/*"
                         className="hidden"
-                        onChange={() => handleFileUpload('image')}
+                        onChange={() => handleFileUpload("image")}
                       />
                       <Button
                         onClick={() => imageInputRef.current?.click()}
@@ -503,11 +518,15 @@ export default function CreateLessonPage() {
                         <Upload className="w-5 h-5 ml-2" />
                         اختر صورة
                       </Button>
-                      
+
                       {uploadedFiles.image && (
                         <div className="mt-4 bg-green-50 rounded-xl p-4 border-2 border-green-200">
                           <p className="text-green-800 arabic-text">✅ تم رفع الصورة بنجاح</p>
-                          <img src={uploadedFiles.image} alt="Preview" className="mt-4 mx-auto max-h-64 rounded-lg" />
+                          <img
+                            src={uploadedFiles.image}
+                            alt="Preview"
+                            className="mt-4 mx-auto max-h-64 rounded-lg"
+                          />
                         </div>
                       )}
                     </div>
@@ -521,7 +540,9 @@ export default function CreateLessonPage() {
                       <Input
                         id="external_link"
                         value={lessonData.external_link}
-                        onChange={(e) => setLessonData({...lessonData, external_link: e.target.value})}
+                        onChange={(e) =>
+                          setLessonData({ ...lessonData, external_link: e.target.value })
+                        }
                         placeholder="https://..."
                         className="text-right arabic-text mt-2"
                       />
@@ -564,3 +585,4 @@ export default function CreateLessonPage() {
     </div>
   );
 }
+```0
