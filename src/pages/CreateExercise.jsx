@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { InvokeLLM } from '@/api/integrations';
-import { Exercise } from '@/api/entities';
+import { invokeArabicLLM } from '@/api/aiclient';
+import { supabase } from '@/api/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -31,11 +31,11 @@ export default function CreateExercisePage() {
   const [customText, setCustomText] = useState('');
   const [wordCount, setWordCount] = useState([80]);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [isReviewing, setIsReviewing] = useState(false);
 
-  // وظيفة لمراجعة وتصحيح النص المُنشأ
-  const reviewAndCorrectText = async (originalText) => {
+  // مراجعة وتصحيح النص المُنشأ
+  const reviewAndCorrectText = async (originalText: string) => {
     try {
       setIsReviewing(true);
       const reviewPrompt = `
@@ -58,8 +58,8 @@ export default function CreateExercisePage() {
         أعد كتابة النص مُصححاً ومُشكولاً بالكامل، النص فقط بدون أي تعليقات.
       `;
 
-      const correctedText = await InvokeLLM({ prompt: reviewPrompt });
-      
+      const correctedText = await invokeArabicLLM({ prompt: reviewPrompt });
+
       if (typeof correctedText === 'string' && correctedText.trim()) {
         return correctedText.trim();
       } else {
@@ -78,29 +78,29 @@ export default function CreateExercisePage() {
       setError('يرجى اختيار نوع النص.');
       return;
     }
-    
+
     if (topic === 'نص من اختيارك' && !customText.trim()) {
       setError('يرجى كتابة النص الخاص بك.');
       return;
     }
-    
+
     if (topic === 'مخصص' && !customTopic.trim()) {
       setError('يرجى كتابة موضوعك.');
       return;
     }
-    
+
     setError(null);
     setIsLoading(true);
 
     try {
       let finalText = '';
-      
+
       if (topic === 'نص من اختيارك') {
         finalText = await reviewAndCorrectText(customText.trim());
       } else {
         const finalTopic = topic === 'مخصص' ? customTopic : topic;
         let prompt = '';
-        
+
         if (topic === 'آية قرآنية') {
           prompt = `
             اكتب آية قرآنية كريمة مع التشكيل الصحيح.
@@ -114,7 +114,6 @@ export default function CreateExercisePage() {
             الآية الكريمة فقط بدون بسملة أو رقم الآية.
           `;
         } else {
-          // Determine complexity based on word count (proxy for level)
           let complexity = "بسيط جداً (مستوى مبتدئ)";
           if (wordCount[0] > 150) complexity = "متقدم ومعقد (مستوى خبير)";
           else if (wordCount[0] > 80) complexity = "متوسط (جمل مركبة)";
@@ -144,29 +143,29 @@ export default function CreateExercisePage() {
         }
 
         try {
-          const generatedText = await InvokeLLM({ prompt });
+          const generatedText = await invokeArabicLLM({ prompt });
 
           if (typeof generatedText !== 'string' || generatedText.trim() === '') {
             throw new Error('فشل الذكاء الاصطناعي في إنشاء النص.');
           }
-          
+
           finalText = await reviewAndCorrectText(generatedText.trim());
-        } catch (llmError) {
-           if (llmError.message && llmError.message.includes('limit')) {
-             throw new Error('عذراً، وصلنا للحد الأقصى من استخدام الذكاء الاصطناعي. يرجى اختيار "نص من اختيارك" وكتابة النص بنفسك.');
+        } catch (llmError: any) {
+          if (llmError?.message && llmError.message.includes('limit')) {
+            throw new Error('عذراً، وصلنا للحد الأقصى من استخدام الذكاء الاصطناعي. يرجى اختيار "نص من اختيارك" وكتابة النص بنفسك.');
           }
           throw llmError;
         }
       }
-      
+
       if (!finalText || finalText.length < 20) {
         throw new Error('النص المُنشأ قصير جداً أو غير صالح.');
       }
-      
+
       let level = 'مبتدئ';
       let stage = 1;
       const actualWordCount = finalText.split(/\s+/).length;
-      
+
       if (actualWordCount >= 150) {
         level = 'متقدم';
         stage = Math.min(10, Math.floor(actualWordCount / 50));
@@ -176,20 +175,28 @@ export default function CreateExercisePage() {
       } else {
         stage = Math.min(5, Math.floor(actualWordCount / 20));
       }
-      
-      const newExercise = await Exercise.create({
-        sentence: finalText,
-        level: level,
-        stage: stage,
-        category: topic === 'نص من اختيارك' ? 'نص مخصص' : topic,
-        difficulty_points: Math.round(actualWordCount / 10),
-        word_count: actualWordCount
-      });
+
+      const { data, error: insertError } = await supabase
+        .from('exercises')
+        .insert({
+          sentence: finalText,
+          level,
+          stage,
+          category: topic === 'نص من اختيارك' ? 'نص مخصص' : topic,
+          difficulty_points: Math.round(actualWordCount / 10),
+          word_count: actualWordCount,
+        })
+        .select('id')
+        .single();
+
+      if (insertError || !data) {
+        console.error(insertError);
+        throw new Error('فشل حفظ التمرين في قاعدة البيانات.');
+      }
 
       const urlParams = new URLSearchParams(window.location.search);
       const studentId = urlParams.get('studentId');
-      navigate(createPageUrl(`Exercise?id=${newExercise.id}&studentId=${studentId}`));
-
+      navigate(createPageUrl(`Exercise?id=${data.id}&studentId=${studentId}`));
     } catch (err) {
       console.error(err);
       setError('حدث خطأ أثناء إنشاء التمرين. يرجى المحاولة مرة أخرى.');
@@ -224,10 +231,10 @@ export default function CreateExercisePage() {
             </p>
           </div>
         </motion.div>
-        
+
         <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
         >
           <Card className="border-0 shadow-2xl bg-white/80 backdrop-blur-sm glow-effect">
             <CardHeader className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-t-xl">
@@ -251,8 +258,10 @@ export default function CreateExercisePage() {
                     <SelectValue placeholder="اختر نوع النص..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {TOPICS.map(t => (
-                      <SelectItem key={t.value} value={t.value} className="arabic-text">{t.label}</SelectItem>
+                    {TOPICS.map((t) => (
+                      <SelectItem key={t.value} value={t.value} className="arabic-text">
+                        {t.label}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -268,11 +277,11 @@ export default function CreateExercisePage() {
                     <FileText className="w-5 h-5" />
                     اكتب أو الصق النص الخاص بك
                   </Label>
-                  <Textarea 
+                  <Textarea
                     id="custom-text"
                     placeholder="اكتب أو الصق هنا النص الذي تريد التدرب عليه..."
                     value={customText}
-                    onChange={e => setCustomText(e.target.value)}
+                    onChange={(e) => setCustomText(e.target.value)}
                     className="arabic-text min-h-[150px] border-2 border-indigo-200 rounded-xl"
                   />
                   <p className="text-sm text-indigo-600 arabic-text">
@@ -287,12 +296,14 @@ export default function CreateExercisePage() {
                   animate={{ opacity: 1, height: 'auto' }}
                   className="space-y-2"
                 >
-                  <Label htmlFor="custom-topic" className="arabic-text text-lg font-semibold text-indigo-900">اكتب موضوعك هنا</Label>
-                  <Input 
+                  <Label htmlFor="custom-topic" className="arabic-text text-lg font-semibold text-indigo-900">
+                    اكتب موضوعك هنا
+                  </Label>
+                  <Input
                     id="custom-topic"
                     placeholder="مثال: قصة عن الأمانة، فوائد القراءة، أهمية العلم..."
                     value={customTopic}
-                    onChange={e => setCustomTopic(e.target.value)}
+                    onChange={(e) => setCustomTopic(e.target.value)}
                     className="arabic-text h-12 border-2 border-indigo-200 rounded-xl"
                   />
                 </motion.div>
@@ -301,10 +312,10 @@ export default function CreateExercisePage() {
               {topic && topic !== 'نص من اختيارك' && (
                 <div className="space-y-4">
                   <Label className="arabic-text text-lg font-semibold text-indigo-900">
-                    عدد الكلمات (تقريباً {Math.round(wordCount[0]/150)} دقيقة قراءة)
+                    عدد الكلمات (تقريباً {Math.round(wordCount[0] / 150)} دقيقة قراءة)
                   </Label>
                   <div className="flex items-center gap-4">
-                    <Slider 
+                    <Slider
                       value={wordCount}
                       onValueChange={setWordCount}
                       min={50}
@@ -318,7 +329,8 @@ export default function CreateExercisePage() {
                   </div>
                   <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-200">
                     <p className="text-sm text-indigo-700 arabic-text">
-                      <strong>المستوى:</strong> {wordCount[0] >= 150 ? 'متقدم' : wordCount[0] >= 100 ? 'متوسط' : 'مبتدئ'}
+                      <strong>المستوى:</strong>{' '}
+                      {wordCount[0] >= 150 ? 'متقدم' : wordCount[0] >= 100 ? 'متوسط' : 'مبتدئ'}
                     </p>
                   </div>
                 </div>
@@ -356,3 +368,4 @@ export default function CreateExercisePage() {
     </div>
   );
 }
+```0
