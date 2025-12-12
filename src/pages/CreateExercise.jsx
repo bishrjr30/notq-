@@ -1,17 +1,29 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { InvokeLLM } from "@/api/aiclient";   // ✅ ذكاء اصطناعي من aiclient
-import { Exercise } from "@/api/entities";    // ✅ التعامل مع Supabase عبر entities
+import { InvokeLLM } from "@/api/aiclient";   // ذكاء اصطناعي من aiclient
+import { Exercise } from "@/api/entities";    // التعامل مع Supabase عبر entities
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { ArrowLeft, Sparkles, Wand2, FileText, AlertCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  Sparkles,
+  Wand2,
+  FileText,
+  AlertCircle,
+} from "lucide-react";
 import { motion } from "framer-motion";
 
 const TOPICS = [
@@ -35,33 +47,32 @@ export default function CreateExercisePage() {
   const [isReviewing, setIsReviewing] = useState(false);
   const [error, setError] = useState(null);
 
-const reviewAndCorrectText = async (originalText) => {
-  try {
-    setIsReviewing(true);
-  
-      const reviewPrompt =`
+  // مراجعة وتصحيح النص المُنشأ بالذكاء الاصطناعي
+  const reviewAndCorrectText = async (originalText) => {
+    try {
+      setIsReviewing(true);
+
+      const reviewPrompt = `
         أنت خبير في اللغة العربية والنحو. راجع النص التالي وصححه إذا لزم الأمر:
-        
+
         "${originalText}"
-        
+
         المطلوب:
-        1. تصحيح أي أخطاء نحوية أو إملائية
-        2. **التشكيل الكامل لكل حرف (Fully Vowelized):** يجب وضع الحركات (فتحة، ضمة، كسرة، سكون) على **جميع** الحروف بلا استثناء، وليس فقط أواخر الكلمات.
-        3. التأكد من سلامة التراكيب والعبارات
-        
+        1. تصحيح أي أخطاء نحوية أو إملائية.
+        2. التشكيل الكامل لكل حرف (Fully Vowelized): يجب وضع الحركات (فتحة، ضمة، كسرة، سكون) على جميع الحروف بلا استثناء، وليس فقط أواخر الكلمات.
+        3. التأكد من سلامة التراكيب والعبارات.
+
         قواعد التشكيل المطلوبة (صارمة جداً):
         - ضع تشكيل على كل حرف متحرك أو ساكن.
-        - ضع الشدّة ّ مع الحركة المناسبة على الحروف المشددة.
+        - ضع الشدّة مع الحركة المناسبة على الحروف المشددة.
         - لا تترك أي حرف بدون تشكيل (إلا حروف المد الساكنة إن لزم).
-        
+
         مثال صحيح: "الْعِلْمُ نُورٌ يُضِيءُ الطَّرِيقَ لِلْمُتَعَلِّمِينَ."
-        
-        أعد كتابة النص مُصححاً ومُشكولاً بالكامل، النص فقط بدون أي تعليقات.
+
+        أعد كتابة النص مصححاً ومشكولاً بالكامل، النص فقط بدون أي تعليقات.
       `;
 
-      const correctedText = await InvokeLLM({
-        prompt: reviewPrompt
-      });
+      const correctedText = await InvokeLLM({ prompt: reviewPrompt });
 
       if (typeof correctedText === "string" && correctedText.trim()) {
         return correctedText.trim();
@@ -98,24 +109,24 @@ const reviewAndCorrectText = async (originalText) => {
 
       let finalText = "";
 
-      // 📌 حالة: الطالب يكتب النص بنفسه
+      // الطالب يكتب النص بنفسه
       if (topic === "نص من اختيارك") {
         finalText = await reviewAndCorrectText(customText.trim());
       } else {
-        // 📌 حالة: الذكاء الاصطناعي ينشئ النص
+        // الذكاء الاصطناعي ينشئ النص
         const finalTopic = topic === "مخصص" ? customTopic : topic;
         let prompt = "";
 
         if (topic === "آية قرآنية") {
           prompt = `
-            اكتب آية قرآنية كريمة (صحيحة)، مع التشكيل الصحيح الكامل.
+            اكتب آية قرآنية كريمة (صحيحة) مع التشكيل الصحيح الكامل.
             الطول التقريبي: حوالي ${wordCount[0]} كلمة.
 
             الشروط:
             1. الآية من القرآن الكريم (نص صحيح).
             2. التشكيل الكامل على جميع الحروف قدر الإمكان.
             3. لا تكتب بسملة ولا رقم الآية.
-            
+
             اكتب الآية فقط.
           `;
         } else {
@@ -129,12 +140,12 @@ const reviewAndCorrectText = async (originalText) => {
 
             المستوى المطلوب: ${complexity}
             عدد الكلمات التقريبي: ${wordCount[0]}
-            
+
             الشروط الصارمة جداً:
-            1. **تشكيل كامل 100%:** كل حرف يجب أن يحمل حركة مناسبة أو سكون.
-            2. **ضبط الإعراب:** تأكد من صحة حركات أواخر الكلمات حسب موقعها الإعرابي.
-            3. **الشدة:** ضع الشدة مع الحركات المناسبة على الحروف المشددة.
-            4. **اللغة سليمة وبسيطة قدر الإمكان للطلاب.
+            1. تشكيل كامل 100٪: كل حرف يجب أن يحمل حركة مناسبة أو سكون.
+            2. ضبط الإعراب: تأكد من صحة حركات أواخر الكلمات حسب موقعها الإعرابي.
+            3. الشدة: ضع الشدة مع الحركات المناسبة على الحروف المشددة.
+            4. أن تكون اللغة سليمة وبسيطة قدر الإمكان للطلاب.
 
             المخرج: النص فقط، مشكولاً بالكامل، بدون أي عناوين أو شرح إضافي.
           `;
@@ -153,7 +164,7 @@ const reviewAndCorrectText = async (originalText) => {
         throw new Error("النص المُنشأ قصير جداً أو غير صالح.");
       }
 
-      // 📊 تقدير المستوى والمرحلة
+      // تقدير المستوى والمرحلة
       let level = "مبتدئ";
       let stage = 1;
       const actualWordCount = finalText.split(/\s+/).length;
@@ -168,14 +179,14 @@ const reviewAndCorrectText = async (originalText) => {
         stage = Math.min(5, Math.floor(actualWordCount / 20));
       }
 
-      // 🗄 إنشاء التمرين في Supabase
+      // إنشاء التمرين في Supabase
       const newExercise = await Exercise.create({
         sentence: finalText,
-        level: level,
-        stage: stage,
+        level,
+        stage,
         category: topic === "نص من اختيارك" ? "نص مخصص" : topic,
         difficulty_points: Math.round(actualWordCount / 10),
-        word_count: actualWordCount
+        word_count: actualWordCount,
       });
 
       const urlParams = new URLSearchParams(window.location.search);
