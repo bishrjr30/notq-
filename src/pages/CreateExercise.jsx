@@ -1,17 +1,18 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
-import { invokeArabicLLM } from '@/api/aiclient';
-import { supabase } from '@/api/supabaseClient';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Slider } from '@/components/ui/slider';
-import { ArrowLeft, Sparkles, Wand2, FileText, AlertCircle } from 'lucide-react';
-import { motion } from 'framer-motion';
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { createPageUrl } from "@/utils";
+import { InvokeLLM } from "@/api/aiclient";   // ✅ ذكاء اصطناعي من aiclient
+import { Exercise } from "@/api/entities";    // ✅ التعامل مع Supabase عبر entities
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { ArrowLeft, Sparkles, Wand2, FileText, AlertCircle } from "lucide-react";
+import { motion } from "framer-motion";
 
 const TOPICS = [
   { value: "آية قرآنية", label: "آية قرآنية" },
@@ -26,16 +27,16 @@ const TOPICS = [
 
 export default function CreateExercisePage() {
   const navigate = useNavigate();
-  const [topic, setTopic] = useState('');
-  const [customTopic, setCustomTopic] = useState('');
-  const [customText, setCustomText] = useState('');
+  const [topic, setTopic] = useState("");
+  const [customTopic, setCustomTopic] = useState("");
+  const [customText, setCustomText] = useState("");
   const [wordCount, setWordCount] = useState([80]);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [isReviewing, setIsReviewing] = useState(false);
+  const [error, setError] = useState(null);
 
-  // مراجعة وتصحيح النص المُنشأ
-  const reviewAndCorrectText = async (originalText: string) => {
+  // ✅ مراجعة وتصحيح النص المُنشأ / المدخَل
+  const reviewAndCorrectText = async (originalText) => {
     try {
       setIsReviewing(true);
       const reviewPrompt = `
@@ -50,23 +51,25 @@ export default function CreateExercisePage() {
         
         قواعد التشكيل المطلوبة (صارمة جداً):
         - ضع تشكيل على كل حرف متحرك أو ساكن.
-        - ضع الشدة ّ مع الحركة المناسبة على الحروف المشددة.
-        - لا تترك أي حرف بدون تشكيل (إلا حروف المد الساكنة إذا اعتدت على ذلك، لكن يفضل التشكيل التام).
+        - ضع الشدّة ّ مع الحركة المناسبة على الحروف المشددة.
+        - لا تترك أي حرف بدون تشكيل (إلا حروف المد الساكنة إن لزم).
         
         مثال صحيح: "الْعِلْمُ نُورٌ يُضِيءُ الطَّرِيقَ لِلْمُتَعَلِّمِينَ."
         
         أعد كتابة النص مُصححاً ومُشكولاً بالكامل، النص فقط بدون أي تعليقات.
       `;
 
-      const correctedText = await invokeArabicLLM({ prompt: reviewPrompt });
+      const correctedText = await InvokeLLM({
+        prompt: reviewPrompt
+      });
 
-      if (typeof correctedText === 'string' && correctedText.trim()) {
+      if (typeof correctedText === "string" && correctedText.trim()) {
         return correctedText.trim();
       } else {
         return originalText;
       }
     } catch (error) {
-      console.error('Text review failed:', error);
+      console.error("Text review failed:", error);
       return originalText;
     } finally {
       setIsReviewing(false);
@@ -74,44 +77,46 @@ export default function CreateExercisePage() {
   };
 
   const handleGenerate = async () => {
-    if (!topic) {
-      setError('يرجى اختيار نوع النص.');
-      return;
-    }
-
-    if (topic === 'نص من اختيارك' && !customText.trim()) {
-      setError('يرجى كتابة النص الخاص بك.');
-      return;
-    }
-
-    if (topic === 'مخصص' && !customTopic.trim()) {
-      setError('يرجى كتابة موضوعك.');
-      return;
-    }
-
-    setError(null);
-    setIsLoading(true);
-
     try {
-      let finalText = '';
+      if (!topic) {
+        setError("يرجى اختيار نوع النص.");
+        return;
+      }
 
-      if (topic === 'نص من اختيارك') {
+      if (topic === "نص من اختيارك" && !customText.trim()) {
+        setError("يرجى كتابة النص الخاص بك.");
+        return;
+      }
+
+      if (topic === "مخصص" && !customTopic.trim()) {
+        setError("يرجى كتابة موضوعك.");
+        return;
+      }
+
+      setError(null);
+      setIsLoading(true);
+
+      let finalText = "";
+
+      // 📌 حالة: الطالب يكتب النص بنفسه
+      if (topic === "نص من اختيارك") {
         finalText = await reviewAndCorrectText(customText.trim());
       } else {
-        const finalTopic = topic === 'مخصص' ? customTopic : topic;
-        let prompt = '';
+        // 📌 حالة: الذكاء الاصطناعي ينشئ النص
+        const finalTopic = topic === "مخصص" ? customTopic : topic;
+        let prompt = "";
 
-        if (topic === 'آية قرآنية') {
+        if (topic === "آية قرآنية") {
           prompt = `
-            اكتب آية قرآنية كريمة مع التشكيل الصحيح.
-            طول الآية: ${wordCount[0]} كلمة تقريباً.
+            اكتب آية قرآنية كريمة (صحيحة)، مع التشكيل الصحيح الكامل.
+            الطول التقريبي: حوالي ${wordCount[0]} كلمة.
+
+            الشروط:
+            1. الآية من القرآن الكريم (نص صحيح).
+            2. التشكيل الكامل على جميع الحروف قدر الإمكان.
+            3. لا تكتب بسملة ولا رقم الآية.
             
-            شروط التشكيل:
-            1. التشكيل الكامل والتام لكل حرف (Fully Vowelized).
-            2. ضع الشدّة (ّ) على الحروف المشددة مع حركتها.
-            3. استخدم التشكيل الصحيح للمصحف الشريف (الرسم العثماني إن أمكن أو الإملائي المشكول).
-            
-            الآية الكريمة فقط بدون بسملة أو رقم الآية.
+            اكتب الآية فقط.
           `;
         } else {
           let complexity = "بسيط جداً (مستوى مبتدئ)";
@@ -121,92 +126,77 @@ export default function CreateExercisePage() {
           prompt = `
             أنت أستاذ لغة عربية خبير وضليع في النحو والصرف.
             المطلوب: إنشاء نص تعليمي باللغة العربية الفصحى حول موضوع "${finalTopic}".
-            
+
             المستوى المطلوب: ${complexity}
             عدد الكلمات التقريبي: ${wordCount[0]}
             
-            الشروط الصارمة جداً (Strict Guidelines):
-            1. **التشكيل الكامل والتام (100% Full Vocalization):** يجب وضع الحركة المناسبة (فتحة، ضمة، كسرة، سكون، شدة) على **كل حرف** بلا استثناء، بما في ذلك الحرف الأخير (الإعراب).
-            2. **ضبط الإعراب:** تأكد من صحة حركات أواخر الكلمات حسب موقعها الإعرابي (الفاعل مرفوع، المفعول منصوب، المجرور مكسور، إلخ).
-            3. **الشدة:** لا تنسَ الشدة على الحروف المشددة مع حركتها.
-            4. **الرسم الإملائي:** تأكد من كتابة الهمزات والتاء المربوطة بشكل صحيح.
-            
-            مثال للجودة المطلوبة:
-            "ذَهَبَ الطَّالِبُ النَّشِيطُ إِلَى الْمَدْرَسَةِ بَاكِرًا، وَهُوَ يَحْمِلُ حَقِيبَتَهُ السَّوْدَاءَ."
-            
-            تجنب الأخطاء الشائعة:
-            - لا تترك أحرفاً بدون تشكيل.
-            - لا تخطئ في إعراب الفاعل والمفعول به.
-            
-            المخرج: النص فقط، مشكولاً بالكامل، بدون أي عناوين أو مقدمات أو ترقيم.
+            الشروط الصارمة جداً:
+            1. **تشكيل كامل 100%:** كل حرف يجب أن يحمل حركة مناسبة أو سكون.
+            2. **ضبط الإعراب:** تأكد من صحة حركات أواخر الكلمات حسب موقعها الإعرابي.
+            3. **الشدة:** ضع الشدة مع الحركات المناسبة على الحروف المشددة.
+            4. **اللغة سليمة وبسيطة قدر الإمكان للطلاب.
+
+            المخرج: النص فقط، مشكولاً بالكامل، بدون أي عناوين أو شرح إضافي.
           `;
         }
 
-        try {
-          const generatedText = await invokeArabicLLM({ prompt });
+        const generatedText = await InvokeLLM({ prompt });
 
-          if (typeof generatedText !== 'string' || generatedText.trim() === '') {
-            throw new Error('فشل الذكاء الاصطناعي في إنشاء النص.');
-          }
-
-          finalText = await reviewAndCorrectText(generatedText.trim());
-        } catch (llmError: any) {
-          if (llmError?.message && llmError.message.includes('limit')) {
-            throw new Error('عذراً، وصلنا للحد الأقصى من استخدام الذكاء الاصطناعي. يرجى اختيار "نص من اختيارك" وكتابة النص بنفسك.');
-          }
-          throw llmError;
+        if (typeof generatedText !== "string" || generatedText.trim() === "") {
+          throw new Error("فشل الذكاء الاصطناعي في إنشاء النص.");
         }
+
+        finalText = await reviewAndCorrectText(generatedText.trim());
       }
 
       if (!finalText || finalText.length < 20) {
-        throw new Error('النص المُنشأ قصير جداً أو غير صالح.');
+        throw new Error("النص المُنشأ قصير جداً أو غير صالح.");
       }
 
-      let level = 'مبتدئ';
+      // 📊 تقدير المستوى والمرحلة
+      let level = "مبتدئ";
       let stage = 1;
       const actualWordCount = finalText.split(/\s+/).length;
 
       if (actualWordCount >= 150) {
-        level = 'متقدم';
+        level = "متقدم";
         stage = Math.min(10, Math.floor(actualWordCount / 50));
       } else if (actualWordCount >= 100) {
-        level = 'متوسط';
+        level = "متوسط";
         stage = Math.min(7, Math.floor(actualWordCount / 30));
       } else {
         stage = Math.min(5, Math.floor(actualWordCount / 20));
       }
 
-      const { data, error: insertError } = await supabase
-        .from('exercises')
-        .insert({
-          sentence: finalText,
-          level,
-          stage,
-          category: topic === 'نص من اختيارك' ? 'نص مخصص' : topic,
-          difficulty_points: Math.round(actualWordCount / 10),
-          word_count: actualWordCount,
-        })
-        .select('id')
-        .single();
-
-      if (insertError || !data) {
-        console.error(insertError);
-        throw new Error('فشل حفظ التمرين في قاعدة البيانات.');
-      }
+      // 🗄 إنشاء التمرين في Supabase
+      const newExercise = await Exercise.create({
+        sentence: finalText,
+        level: level,
+        stage: stage,
+        category: topic === "نص من اختيارك" ? "نص مخصص" : topic,
+        difficulty_points: Math.round(actualWordCount / 10),
+        word_count: actualWordCount
+      });
 
       const urlParams = new URLSearchParams(window.location.search);
-      const studentId = urlParams.get('studentId');
-      navigate(createPageUrl(`Exercise?id=${data.id}&studentId=${studentId}`));
+      const studentId = urlParams.get("studentId");
+
+      navigate(
+        createPageUrl(`Exercise?id=${newExercise.id}&studentId=${studentId}`)
+      );
     } catch (err) {
       console.error(err);
-      setError('حدث خطأ أثناء إنشاء التمرين. يرجى المحاولة مرة أخرى.');
+      setError("حدث خطأ أثناء إنشاء التمرين. يرجى المحاولة مرة أخرى.");
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-6" dir="rtl">
+    <div
+      className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-6"
+      dir="rtl"
+    >
       <div className="max-w-3xl mx-auto">
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -227,7 +217,8 @@ export default function CreateExercisePage() {
               تحدي إضافي - إنشاء تمرين مخصص
             </h1>
             <p className="text-indigo-600 arabic-text">
-              اختر تفضيلاتك ليقوم الذكاء الاصطناعي بإنشاء نص للقراءة بجودة عالية.
+              اختر تفضيلاتك ليقوم الذكاء الاصطناعي بإنشاء نص للقراءة بجودة
+              عالية.
             </p>
           </div>
         </motion.div>
@@ -244,22 +235,37 @@ export default function CreateExercisePage() {
               <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
                 <div>
-                  <h3 className="font-semibold text-green-800 arabic-text mb-1">ضمان الجودة</h3>
+                  <h3 className="font-semibold text-green-800 arabic-text mb-1">
+                    ضمان الجودة
+                  </h3>
                   <p className="text-sm text-green-700 arabic-text">
-                    جميع النصوص تخضع لمراجعة تلقائية للتأكد من صحة القواعد النحوية والتشكيل قبل عرضها.
+                    جميع النصوص تخضع لمراجعة تلقائية للتأكد من صحة القواعد
+                    النحوية والتشكيل قبل عرضها.
                   </p>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="topic" className="arabic-text text-lg font-semibold text-indigo-900">نوع النص</Label>
+                <Label
+                  htmlFor="topic"
+                  className="arabic-text text-lg font-semibold text-indigo-900"
+                >
+                  نوع النص
+                </Label>
                 <Select onValueChange={setTopic}>
-                  <SelectTrigger id="topic" className="arabic-text h-12 border-2 border-indigo-200 rounded-xl">
+                  <SelectTrigger
+                    id="topic"
+                    className="arabic-text h-12 border-2 border-indigo-200 rounded-xl"
+                  >
                     <SelectValue placeholder="اختر نوع النص..." />
                   </SelectTrigger>
                   <SelectContent>
                     {TOPICS.map((t) => (
-                      <SelectItem key={t.value} value={t.value} className="arabic-text">
+                      <SelectItem
+                        key={t.value}
+                        value={t.value}
+                        className="arabic-text"
+                      >
                         {t.label}
                       </SelectItem>
                     ))}
@@ -267,13 +273,16 @@ export default function CreateExercisePage() {
                 </Select>
               </div>
 
-              {topic === 'نص من اختيارك' && (
+              {topic === "نص من اختيارك" && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
+                  animate={{ opacity: 1, height: "auto" }}
                   className="space-y-2"
                 >
-                  <Label htmlFor="custom-text" className="arabic-text text-lg font-semibold text-indigo-900 flex items-center gap-2">
+                  <Label
+                    htmlFor="custom-text"
+                    className="arabic-text text-lg font-semibold text-indigo-900 flex items-center gap-2"
+                  >
                     <FileText className="w-5 h-5" />
                     اكتب أو الصق النص الخاص بك
                   </Label>
@@ -285,18 +294,22 @@ export default function CreateExercisePage() {
                     className="arabic-text min-h-[150px] border-2 border-indigo-200 rounded-xl"
                   />
                   <p className="text-sm text-indigo-600 arabic-text">
-                    سيتم مراجعة النص وتصحيح التشكيل والقواعد تلقائياً قبل إنشاء التمرين.
+                    سيتم مراجعة النص وتصحيح التشكيل والقواعد تلقائياً قبل إنشاء
+                    التمرين.
                   </p>
                 </motion.div>
               )}
 
-              {topic === 'مخصص' && (
+              {topic === "مخصص" && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
+                  animate={{ opacity: 1, height: "auto" }}
                   className="space-y-2"
                 >
-                  <Label htmlFor="custom-topic" className="arabic-text text-lg font-semibold text-indigo-900">
+                  <Label
+                    htmlFor="custom-topic"
+                    className="arabic-text text-lg font-semibold text-indigo-900"
+                  >
                     اكتب موضوعك هنا
                   </Label>
                   <Input
@@ -309,10 +322,11 @@ export default function CreateExercisePage() {
                 </motion.div>
               )}
 
-              {topic && topic !== 'نص من اختيارك' && (
+              {topic && topic !== "نص من اختيارك" && (
                 <div className="space-y-4">
                   <Label className="arabic-text text-lg font-semibold text-indigo-900">
-                    عدد الكلمات (تقريباً {Math.round(wordCount[0] / 150)} دقيقة قراءة)
+                    عدد الكلمات (تقريباً {Math.round(wordCount[0] / 150)} دقيقة
+                    قراءة)
                   </Label>
                   <div className="flex items-center gap-4">
                     <Slider
@@ -329,8 +343,12 @@ export default function CreateExercisePage() {
                   </div>
                   <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-200">
                     <p className="text-sm text-indigo-700 arabic-text">
-                      <strong>المستوى:</strong>{' '}
-                      {wordCount[0] >= 150 ? 'متقدم' : wordCount[0] >= 100 ? 'متوسط' : 'مبتدئ'}
+                      <strong>المستوى:</strong>{" "}
+                      {wordCount[0] >= 150
+                        ? "متقدم"
+                        : wordCount[0] >= 100
+                        ? "متوسط"
+                        : "مبتدئ"}
                     </p>
                   </div>
                 </div>
@@ -339,7 +357,9 @@ export default function CreateExercisePage() {
               {error && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-2">
                   <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
-                  <p className="text-red-600 arabic-text font-medium">{error}</p>
+                  <p className="text-red-600 arabic-text font-medium">
+                    {error}
+                  </p>
                 </div>
               )}
 
@@ -352,12 +372,16 @@ export default function CreateExercisePage() {
                 {isLoading || isReviewing ? (
                   <>
                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white ml-2"></div>
-                    {isReviewing ? 'جارٍ المراجعة والتصحيح...' : 'جارٍ الإنشاء...'}
+                    {isReviewing
+                      ? "جارٍ المراجعة والتصحيح..."
+                      : "جارٍ الإنشاء..."}
                   </>
                 ) : (
                   <>
                     <Sparkles className="w-5 h-5 ml-2" />
-                    {topic === 'نص من اختيارك' ? 'مراجعة وإنشاء التمرين' : 'إنشاء نص محسّن'}
+                    {topic === "نص من اختيارك"
+                      ? "مراجعة وإنشاء التمرين"
+                      : "إنشاء نص محسّن"}
                   </>
                 )}
               </Button>
@@ -368,4 +392,3 @@ export default function CreateExercisePage() {
     </div>
   );
 }
-```0
