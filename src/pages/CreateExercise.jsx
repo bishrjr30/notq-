@@ -35,10 +35,11 @@ export default function CreateExercisePage() {
   const [isReviewing, setIsReviewing] = useState(false);
   const [error, setError] = useState(null);
 
-  // ✅ مراجعة وتصحيح النص المُنشأ / المدخَل
-  const reviewAndCorrectText = async (originalText) => {
-    try {
-      setIsReviewing(true);
+ // ✅ مراجعة وتصحيح النص المُنشأ
+const reviewAndCorrectText = async (originalText) => {
+  try {
+    setIsReviewing(true);
+    // ...
       const reviewPrompt = `
         أنت خبير في اللغة العربية والنحو. راجع النص التالي وصححه إذا لزم الأمر:
         
